@@ -6,9 +6,11 @@ import tempfile
 import dataclasses
 import os
 from dotenv import load_dotenv
+from models import Invoice
 
 load_dotenv()
 
+os.environ['GEMINI_API_KEY'] = os.getenv("GOOGLE_API_KEY")
 
 class PdfToMarkdown(cocoindex.op.FunctionSpec):
     """Convert a PDF to markdown."""
@@ -49,6 +51,17 @@ def docs_to_kg_flow(
         
         # convert invoice to markdown
         doc["markdown"] = doc["content"].transform(PdfToMarkdown())
+        
+        # extracting invoice details
+        doc["invoice_details"] = doc["markdown"].transform(
+            cocoindex.functions.ExtractByLlm(
+                llm_spec=cocoindex.LlmSpec(
+                    api_type=cocoindex.LlmApiType.GEMINI, model="gemini-flash-lite-latest"
+                ),
+                output_type=Invoice,
+                instruction="Extract invoice details",
+            )
+        )
         
 
 
