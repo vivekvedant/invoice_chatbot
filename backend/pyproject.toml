@@ -1,0 +1,17 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.40.43",
+    "botocore>=1.40.43",
+    "cocoindex==0.2.14",
+    "docling>=2.55.1",
+    "fastapi[standard]>=0.118.0",
+    "langchain-google-genai>=2.1.12",
+    "langchain-neo4j>=0.5.0",
+    "pydantic>=2.11.9",
+    "python-dotenv==1.1.1",
+]
