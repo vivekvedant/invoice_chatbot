@@ -1,18 +1,23 @@
-"use client"
+"use client";
 
-import { FileText, Loader2 } from "lucide-react"
-import { formatBytes, formatUnixSeconds } from "@/lib/format"
+import { FileText, Loader2 } from "lucide-react";
 
-type PdfFile = { name: string; size: number; last_modified: number }
+type PdfFile = {
+  file_name: string;
+  status: "pending" | "indexing" | "completed" | "error";
+  last_updated: string;
+};
 
 export function InvoicesTable({
   pdfs,
   loading,
   onRefresh,
+  onSelectDocument,
 }: {
-  pdfs: PdfFile[]
-  loading: boolean
-  onRefresh: () => void
+  pdfs: PdfFile[];
+  loading: boolean;
+  onRefresh: () => void;
+  onSelectDocument?: (documentNumber: number) => void;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
@@ -38,7 +43,9 @@ export function InvoicesTable({
             <FileText className="w-10 h-10 text-gray-400" />
           </div>
           <p className="text-gray-600 font-medium mb-1">No invoices yet</p>
-          <p className="text-gray-500 text-sm">Click "Upload PDF" to add your first invoice</p>
+          <p className="text-gray-500 text-sm">
+            Click "Upload PDF" to add your first invoice
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -49,10 +56,10 @@ export function InvoicesTable({
                   File Name
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Size
+                  Status
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Date Added
+                  Last Updated
                 </th>
               </tr>
             </thead>
@@ -64,11 +71,32 @@ export function InvoicesTable({
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
                         <FileText className="w-5 h-5 text-white" />
                       </div>
-                      <span className="text-gray-800 font-medium">{pdf.name}</span>
+                      <span className="text-gray-800 font-medium">
+                        {pdf.file_name}
+                      </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{formatBytes(pdf.size)}</td>
-                  <td className="px-6 py-4 text-gray-600">{formatUnixSeconds(pdf.last_modified)}</td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        pdf.status === "completed"
+                          ? "bg-green-100 text-green-800"
+                          : pdf.status === "indexing"
+                          ? "bg-blue-100 text-blue-800"
+                          : pdf.status === "pending"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {pdf.status === "indexing" && (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      )}
+                      {pdf.status.charAt(0).toUpperCase() + pdf.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-600">
+                    {pdf.last_updated}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -76,5 +104,5 @@ export function InvoicesTable({
         </div>
       )}
     </div>
-  )
+  );
 }

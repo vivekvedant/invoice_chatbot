@@ -1,18 +1,35 @@
 "use client";
 
 import useSWR from "swr";
-import { API_BASE_URL } from "@/lib/config";
+import { API_BASE_URL } from "../../lib/config";
 import { UploadSection } from "./upload-section";
 import { InvoicesTable } from "./invoices-table";
-import { usePdfFiles } from "@/hooks/use-pdf-files";
 
+type PdfFile = {
+  file_name: string;
+  status: "pending" | "indexing" | "completed" | "error";
+  last_updated: string;
+};
+
+const fetcher = (url: string) =>
+  fetch(url).then((r) => {
+    if (!r.ok) throw new Error("Failed to load");
+    return r.json();
+  });
 
 export function InvoicesPage({
   onPdfCountChange,
+  onDocumentSelect,
 }: {
   onPdfCountChange?: (count: number) => void;
+  onDocumentSelect?: (documentNumber: number) => void;
 }) {
-  const { pdfs, isLoading, mutate } = usePdfFiles();
+  const { data, isLoading, mutate } = useSWR<{ pdf_files: PdfFile[] }>(
+    `${API_BASE_URL}/list-pdfs/`,
+    fetcher,
+    { refreshInterval: 2000 } // Poll every 2 seconds to get status updates
+  );
+  const pdfs = data?.pdf_files ?? [];
 
   // keep sidebar count in sync
   if (onPdfCountChange) {
@@ -71,6 +88,7 @@ export function InvoicesPage({
           pdfs={pdfs}
           loading={isLoading && pdfs.length === 0}
           onRefresh={() => mutate()}
+          onSelectDocument={onDocumentSelect}
         />
       </div>
     </section>
