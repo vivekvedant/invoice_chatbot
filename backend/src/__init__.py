@@ -2,12 +2,18 @@
 Invoice Chatbot Backend Package.
 
 Provides FastAPI application, Neo4j integration, LLM-based agentic workflow,
-and file indexing pipeline.
+file indexing pipeline, and centralized logging.
 """
 
 from .cache_manager import CacheManager
 from .config import get_llm, get_neo4j_graph, get_s3_client, get_settings
-from .db_models import Files, SessionLocal
+from .db_models import Files, get_db_engine, get_session, get_session_factory
+from .logging_config import (
+    configure_uvicorn_logging,
+    get_app_logger,
+    get_indexer_logger,
+    get_logger,
+)
 from .models import CypherQuery, Invoice, Item, Relationship
 
 # Import agent exports separately to handle langgraph compatibility issues
@@ -26,8 +32,14 @@ __all__ = [
     "get_neo4j_graph",
     "get_s3_client",
     "get_llm",
+    "get_app_logger",
+    "get_indexer_logger",
+    "get_logger",
+    "configure_uvicorn_logging",
     "Files",
-    "SessionLocal",
+    "get_db_engine",
+    "get_session_factory",
+    "get_session",
     "CypherQuery",
     "Invoice",
     "Item",

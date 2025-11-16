@@ -14,7 +14,7 @@ import redis
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .db_models import Files, SessionLocal
+from .db_models import Files, get_session
 
 
 @contextmanager
@@ -27,7 +27,7 @@ def _db_session() -> Generator[Session, None, None]:
     Yields:
         SQLAlchemy Session instance.
     """
-    session = SessionLocal()
+    session = get_session()
     try:
         yield session
         session.commit()

@@ -9,11 +9,14 @@ from neo4j import GraphDatabase
 
 from src import Invoice
 from src.cache_manager import CacheManager
+from src.logging_config import get_indexer_logger
 
 load_dotenv(dotenv_path=".env")
 
 os.environ["GEMINI_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 dynamodb = boto3.resource("dynamodb")
+
+logger = get_indexer_logger()
 
 
 class PdfToMarkdown(cocoindex.op.FunctionSpec):
@@ -39,21 +42,19 @@ class PdfToMarkdownExecutor:
 
 @cocoindex.op.function()
 def update_database(filename: str, status: str) -> str:
-    # session = SessionLocal()
-
-    # file_record = session.query(Files).filter_by(file_name=filename).first()
-    # if file_record:
-    #     file_record.status = status
-    #     file_record.last_updated = datetime.now(timezone.utc)
-    #     session.commit()
-    #     session.close()
-    #     print(f"✅ Updated DB: {file_record.file_name} → indexing")
-    # else:
-    #     print(f"⚠️ No matching DB record found for source '{filename}'")
-    cache_manager = CacheManager()
-    cache_manager.update_cache_and_database(file_name=filename, indexing_status=status)
-
-    return "completed"
+    """Update file indexing status in cache and database."""
+    try:
+        cache_manager = CacheManager()
+        cache_manager.update_cache_and_database(
+            file_name=filename, indexing_status=status
+        )
+        logger.info(f"Updated indexing status: {filename} → {status}")
+        return "completed"
+    except Exception as e:
+        logger.error(
+            f"Failed to update database for {filename}: {str(e)}", exc_info=True
+        )
+        return "failed"
 
 
 class Neo4jTarget(cocoindex.op.TargetSpec):
@@ -118,6 +119,7 @@ class Neo4JTargetConnector:
                     with driver.session() as session:
                         session.run(cypher_query, params)
 
+                    logger.info(f"Deleted Neo4j records for invoice: {filename_key}")
                     break
 
                 invoice_data = value["invoice_details"]
@@ -160,19 +162,21 @@ class Neo4JTargetConnector:
 
                 with driver.session() as session:
                     session.run(cypher_query, params)
+                    invoice_num = invoice_data.get("invoice_number")
+                    logger.info(f"Persisted invoice to Neo4j: {invoice_num}")
 
 
 @cocoindex.flow_def(name="invoice_kg")
 def docs_to_kg_flow(
     flow_builder: cocoindex.FlowBuilder, data_scope: cocoindex.DataScope
 ) -> None:
-    """ """
-    # data_scope["documents"] = flow_builder.add_source(
-    #     cocoindex.sources.LocalFile(path="invoices", binary=True)
-    # )
+    """Define invoice knowledge graph processing flow."""
     bucket_name = os.environ["AMAZON_S3_BUCKET_NAME"]
     prefix = os.environ.get("AMAZON_S3_PREFIX", None)
     sqs_queue_url = os.environ.get("AMAZON_S3_SQS_QUEUE_URL", None)
+
+    logger.info(f"Starting flow: bucket={bucket_name}, prefix={prefix}")
+
     data_scope["documents"] = flow_builder.add_source(
         cocoindex.sources.AmazonS3(
             bucket_name=bucket_name,
@@ -186,8 +190,6 @@ def docs_to_kg_flow(
     )
 
     document_node = data_scope.add_collector()
-    # entity_relationship = data_scope.add_collector()
-    # entity_mention = data_scope.add_collector()
 
     with data_scope["documents"].row() as doc:
 
@@ -232,23 +234,26 @@ def docs_to_kg_flow(
 
 
 def main():
+    """Start the indexing service."""
+    logger.info("Indexing service initialized")
 
-    cocoindex.init()
+    try:
+        cocoindex.init()
 
-    # Setup the flow
-    docs_to_kg_flow.setup(report_to_stdout=True)
-    # session = SessionLocal()
+        # Setup the flow
+        docs_to_kg_flow.setup(report_to_stdout=True)
 
-    current_source = None
-
-    with cocoindex.FlowLiveUpdater(
-        docs_to_kg_flow, cocoindex.FlowLiveUpdaterOptions(print_stats=True)
-    ) as updater:
-        print("Live updater started. Press Ctrl+C to stop.")
-        try:
-            updater.wait()
-        except KeyboardInterrupt:
-            print(f"error occurred while processing: {current_source}")
+        with cocoindex.FlowLiveUpdater(
+            docs_to_kg_flow, cocoindex.FlowLiveUpdaterOptions(print_stats=True)
+        ) as updater:
+            logger.info("Live updater started. Listening for documents...")
+            try:
+                updater.wait()
+            except KeyboardInterrupt:
+                logger.info("Indexing service interrupted by user")
+    except Exception as e:
+        logger.error(f"Indexing service error: {str(e)}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

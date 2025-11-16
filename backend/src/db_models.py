@@ -5,12 +5,11 @@ Uses SQLAlchemy ORM with PostgreSQL backend for persistence.
 Provides session factory and declarative base for model definitions.
 """
 
-from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Generator
+from functools import lru_cache
 
 from sqlalchemy import Column, DateTime, Integer, Text, create_engine, text
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import get_settings
 
@@ -73,17 +72,49 @@ class Files(Base):
         }
 
 
-# Initialize database engine and session factory
-_settings = get_settings()
-engine = create_engine(_settings.cocoindex_database_url)
+@lru_cache(maxsize=1)
+def get_db_engine():
+    """
+    Get cached database engine instance.
 
-# Create schema and tables
-with engine.begin() as conn:
-    conn.execute(text("CREATE SCHEMA IF NOT EXISTS custom_app"))
-    conn.commit()
+    Lazy-loads engine to avoid connection attempts during import.
+    Uses lru_cache to ensure single engine instance.
 
-Base.metadata.create_all(bind=engine)
+    Returns:
+        SQLAlchemy Engine configured with PostgreSQL connection.
+    """
+    settings = get_settings()
+    engine = create_engine(settings.cocoindex_database_url)
 
-SessionLocal = sessionmaker(bind=engine)
+    # Create schema and tables
+    with engine.begin() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS custom_app"))
+        conn.commit()
+
+    Base.metadata.create_all(bind=engine)
+    return engine
+
+
+@lru_cache(maxsize=1)
+def get_session_factory():
+    """
+    Get cached session factory instance.
+
+    Returns:
+        SQLAlchemy sessionmaker bound to the database engine.
+    """
+    return sessionmaker(bind=get_db_engine())
+
+
+def get_session():
+    """
+    Create a new database session.
+
+    Returns:
+        New SQLAlchemy Session instance.
+    """
+    SessionFactory = get_session_factory()
+    return SessionFactory()
+
 
 

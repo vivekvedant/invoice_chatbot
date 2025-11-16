@@ -13,6 +13,7 @@ import boto3
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_neo4j import Neo4jGraph
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 # Load environment variables from .env file
@@ -21,6 +22,12 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Type-safe application settings loaded from environment variables."""
+
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",  # Ignore extra env vars not defined in model
+    )
 
     # Neo4j Configuration
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -48,12 +55,6 @@ class Settings(BaseSettings):
 
     # CORS Configuration
     cors_origins: list[str] = ["*"]
-
-    class Config:
-        """Pydantic config."""
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # Ignore extra env vars not defined in model
 
     def model_validate_env(self) -> None:
         """Validate critical environment variables at startup."""
