@@ -130,18 +130,19 @@ class CacheManager:
         index_map = {item["file_name"]: i for i, item in enumerate(cached_files)}
 
         timestamp = datetime.now(timezone.utc)
+        unix_timestamp = int(timestamp.timestamp())
 
         # Existing entry update or new entry append
         if file_name in index_map:
             idx = index_map[file_name]
             cached_files[idx]["status"] = indexing_status
-            cached_files[idx]["last_updated"] = timestamp.isoformat()
+            cached_files[idx]["last_updated"] = unix_timestamp
         else:
             cached_files.append(
                 {
                     "file_name": file_name,
                     "status": indexing_status,
-                    "last_updated": timestamp.isoformat(),
+                    "last_updated": unix_timestamp,
                 }
             )
 
@@ -151,13 +152,13 @@ class CacheManager:
 
             if record:
                 record.status = indexing_status
-                record.last_updated = timestamp
+                record.last_updated = unix_timestamp
             else:
                 session.add(
                     Files(
                         file_name=file_name,
                         status=indexing_status,
-                        last_updated=timestamp,
+                        last_updated=unix_timestamp,
                     )
                 )
 
