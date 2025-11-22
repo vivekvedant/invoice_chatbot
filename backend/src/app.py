@@ -153,6 +153,52 @@ async def list_pdfs() -> dict[str, list[dict]]:
         ) from e
 
 
+@app.get("/get_file_link")
+async def get_file_link(file_name: str) -> dict[str, str]:
+    """
+    Generate a temporary presigned URL for downloading a file from S3.
+
+    Allows clients to download processed PDF files with automatic expiration.
+
+    Args:
+        file_name: Name of the file to download (query parameter).
+
+    Returns:
+        Dictionary with download_url and file_name keys.
+
+    Raises:
+        HTTPException: If file_name is empty or S3 URL generation fails.
+    """
+    if not file_name or not file_name.strip():
+        logger.warning("Get file link requested with empty file_name")
+        raise HTTPException(
+            status_code=400,
+            detail="file_name parameter is required and cannot be empty",
+        )
+
+    try:
+        s3_client = get_s3_client()
+        download_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": settings.aws_s3_bucket_name,
+                "Key": file_name,
+            },
+            ExpiresIn=3600,  # 1 hour expiration
+        )
+
+        logger.info(f"Generated download link for file: {file_name} {download_url}")
+        return {"download_url": download_url, "file_name": file_name}
+    except (BotoCoreError, ClientError) as e:
+        logger.error(
+            f"Error generating download URL for {file_name}: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating download URL: {str(e)}",
+        ) from e
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
     """
