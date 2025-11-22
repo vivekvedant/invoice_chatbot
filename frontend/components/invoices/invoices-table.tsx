@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   XCircle,
 } from "lucide-react";
+import { API_BASE_URL } from "../../lib/config";
 
 type PdfFile = {
   file_name: string;
@@ -73,9 +74,9 @@ export function InvoicesTable({
       setLoadingFile(fileName);
 
       const response = await fetch(
-        `${
-          process.env.NEXT_PUBLIC_API_BASE_URL || ""
-        }/get_file_link?file_name=${encodeURIComponent(fileName)}`,
+        `${API_BASE_URL}/get_file_link?file_name=${encodeURIComponent(
+          fileName
+        )}`,
         {
           method: "GET",
         }
@@ -130,8 +131,8 @@ export function InvoicesTable({
       setDeletingFile(fileName);
       closeDeleteModal();
 
-      const response = await fetch("/api/delete_file", {
-        method: "POST",
+      const response = await fetch(`${API_BASE_URL}/delete_file`, {
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
         },
