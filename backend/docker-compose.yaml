@@ -18,28 +18,31 @@ services:
           memory: 128m
 
   neo4j:
-    image: neo4j:2025.08-community-ubi9
+    image: neo4j:2025.10
     restart: always
     volumes:
-        - ./data/neo4j/logs:/logs
-        - ./data/neo4j/config:/config
-        - ./data/neo4j/data:/data
-        - ./data/neo4j/plugins:/plugins
+      - ./data/neo4j/logs:/logs
+      - ./data/neo4j/config:/config
+      - ./data/neo4j/data:/data
+      # - ./data/neo4j/plugins:/plugins
     environment:
-        - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
-        - NEO4J_PLUGINS='["graph-data-science"]'
-        - NEO4J_db_logs_query_enabled=VERBOSE
-        - NEO4J_db_logs_query_transaction_enabled=VERBOSE
-        - NEO4J_db_logs_query_parameter__logging__enabled=true
-        - NEO4J_dbms_logs_http_enabled=true
-        - NEO4J_server_logs_debug_enabled=true
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*,gds.*
+      - NEO4J_apoc_config_compatibility_enable_apoc_meta_data=true
+      - NEO4J_db_logs_query_enabled=VERBOSE
+      - NEO4J_db_logs_query_transaction_enabled=VERBOSE
+      - NEO4J_db_logs_query_parameter__logging__enabled=true
+      - NEO4J_dbms_logs_http_enabled=true
+      - NEO4J_server_logs_debug_enabled=true
     ports:
-        - "7474:7474"
-        - "7687:7687"
+      - "7474:7474"
+      - "7687:7687"
 
   redis:
     image: redislabs/redismod
     ports:
-      - "6379:6379"
+      - "6378:6379"
     volumes:
       - ./data/redis_data:/data
