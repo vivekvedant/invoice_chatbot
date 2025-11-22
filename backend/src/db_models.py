@@ -12,12 +12,17 @@ from sqlalchemy import Column, DateTime, Integer, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import get_settings
+from sqlalchemy import DateTime
 
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
 
     pass
+
+
+def utc_timestamp():
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 class Files(Base):
@@ -41,14 +46,15 @@ class Files(Base):
     file_name = Column(Text, nullable=False)
     status = Column(Text, nullable=False)
     created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        Integer,
+        default=utc_timestamp,
         nullable=False,
     )
+
     last_updated = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        Integer,
+        default=utc_timestamp,      # give initial value
+        onupdate=utc_timestamp,     # update on update
         nullable=False,
     )
 
@@ -63,12 +69,8 @@ class Files(Base):
             "id": self.id,
             "file_name": self.file_name,
             "status": self.status,
-            "created_at": (
-                self.created_at.strftime("%Y-%m-%d") if self.created_at else None
-            ),
-            "last_updated": (
-                self.last_updated.strftime("%Y-%m-%d") if self.last_updated else None
-            ),
+            "created_at": self.created_at,
+            "last_updated": self.last_updated,
         }
 
 
@@ -115,6 +117,3 @@ def get_session():
     """
     SessionFactory = get_session_factory()
     return SessionFactory()
-
-
-
