@@ -74,6 +74,12 @@ class ChatRequest(BaseModel):
     user_input: str
 
 
+class DeleteFileRequest(BaseModel):
+    """Request model for deleting a file from S3."""
+
+    file_name: str
+
+
 # ===== Utility =====
 
 
@@ -196,6 +202,56 @@ async def get_file_link(file_name: str) -> dict[str, str]:
         raise HTTPException(
             status_code=500,
             detail=f"Error generating download URL: {str(e)}",
+        ) from e
+
+
+@app.delete("/delete_file/")
+async def delete_file(request: DeleteFileRequest) -> dict[str, str]:
+    """
+    Delete a file from S3 given its file name.
+
+    Accepts:
+        JSON body with `file_name` key.
+
+    Returns:
+        dict with deleted file_name on success.
+
+    Side effects:
+        - Calls S3 DeleteObject
+        - Updates cache/database status to "deleted"
+    """
+    if not request.file_name or not request.file_name.strip():
+        logger.warning("Delete file requested with empty file_name")
+        raise HTTPException(
+            status_code=400, detail="file_name is required and cannot be empty"
+        )
+
+    try:
+        s3_client = get_s3_client()
+        # Perform delete
+        s3_client.delete_object(
+            Bucket=settings.aws_s3_bucket_name, Key=request.file_name
+        )
+
+        # Update cache/database to reflect deletion (set status to 'deleted')
+        cache_manager = _get_cache_manager()
+        try:
+            cache_manager.update_cache_and_database(
+                file_name=request.file_name, indexing_status="deleted"
+            )
+        except Exception:
+            # Cache/db update should not block S3 deletion; log and continue
+            logger.exception("Failed to update cache/database after S3 delete")
+
+        logger.info(f"Deleted file from S3: {request.file_name}")
+        return {"deleted": request.file_name}
+    except (BotoCoreError, ClientError) as e:
+        logger.error(
+            f"Error deleting file {request.file_name}: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting file: {str(e)}",
         ) from e
 
 
