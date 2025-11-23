@@ -1,9 +1,3 @@
-"""
-Agent module for invoice chatbot.
-
-Provides LangGraph-based agentic workflow with Neo4j graph querying capability.
-Uses tools to execute Cypher queries and streams responses via tool node routing.
-"""
 
 from typing import Annotated, Any, TypedDict
 
@@ -78,26 +72,25 @@ def _chatbot_node(state: ChatbotState) -> dict[str, list[Any]]:
 
     # if SystemMessage not in state["messages"]:
     system_prompt = f"""
-    # Role:
-    You are a assistant agent who will only answer the queries related to invoices from past
-    conversation or fetch the relevant data from neo4j and generate the answer
-    
-    # Task:
-    1. Understand the user input
-    2. Understand neo4j graph schema
-    3. Fetch the data
-    4. Generate the Answer
-    
-    <Neo4j_schema>  {get_graph_schema()} </Neo4j_Schema>
-    
-    <Output_Format>Text </Output_Format>
-    
-    <Rules>
-    1. Don't explain the answer
-    2. If you don't have the context for the answer inform user do you have context for the answer.
-    3. Don't provide Neo4j Cypher query
-    4. Don't provide empty response
-    </Rules>
+    Role:
+    You are a friendly, helpful assistant specialized in invoices. Prefer
+    short, clear, and polite replies that a non-technical user can understand.
+
+    Behavior:
+    - Use plain language (short sentences). Be helpful and concise.
+    - If required information is missing, ask one direct clarifying question.
+    - Give a brief (1-2 sentence) explanation only when it helps the user.
+    - Never expose internal Cypher queries or tool internals; only return
+        user-facing results.
+
+    When using the knowledge graph, prefer returning a summarized answer and
+    highlight any assumptions you made. If no matching data is found, clearly
+    tell the user and offer a next step (for example: "I couldn't find a match;
+    do you want me to search by invoice number or date?").
+
+    <Neo4j_schema> {get_graph_schema()} </Neo4j_schema>
+
+    Output_Format: Plain text suitable for end users
     """
     response = llm_with_tools.invoke(
         [SystemMessage(content=system_prompt)] + state["messages"]
@@ -131,16 +124,16 @@ def _tools_router(state: ChatbotState) -> str:
 
 
 _tool_node = ToolNode(tools=_tools)
-_graph = StateGraph(ChatbotState)
+graph = StateGraph(ChatbotState)
 
-_graph.add_node("process_user_node", process_user_node)
-_graph.add_node("process_ai_response_node", process_ai_response_node)
+graph.add_node("process_user_node", process_user_node)
+graph.add_node("process_ai_response_node", process_ai_response_node)
 
-_graph.add_node("chatbot", _chatbot_node)
-_graph.add_node("tool_node", _tool_node)
+graph.add_node("chatbot", _chatbot_node)
+graph.add_node("tool_node", _tool_node)
 
-_graph.set_entry_point("process_user_node")
-_graph.add_edge("process_user_node", "chatbot")
-_graph.add_edge("chatbot", "process_ai_response_node")
-_graph.add_conditional_edges("process_ai_response_node", _tools_router)
-_graph.add_edge("tool_node", "chatbot")
+graph.set_entry_point("process_user_node")
+graph.add_edge("process_user_node", "chatbot")
+graph.add_edge("chatbot", "process_ai_response_node")
+graph.add_conditional_edges("process_ai_response_node", _tools_router)
+graph.add_edge("tool_node", "chatbot")

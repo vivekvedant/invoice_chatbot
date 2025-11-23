@@ -1,32 +1,18 @@
-"""
-FastAPI application for invoice chatbot backend.
-
-Provides endpoints for:
-  - Presigned URL generation for S3 file uploads
-  - PDF listing from cache and database
-  - Streaming chat responses via agentic workflow
-  - Real-time indexing status updates
-"""
-
 from typing import AsyncGenerator
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-
-# from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
-
-from .agent import _graph
-from .agent import get_graph_schema
+from .agent import graph
 from .cache_manager import CacheManager
 from .config import get_s3_client, get_settings
 from .logging_config import configure_uvicorn_logging, get_app_logger
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from contextlib import asynccontextmanager
-from langchain_core.messages import AIMessage
 from langchain_core.messages.human import HumanMessage
+import os
 
 # Initialize centralized logging
 logger = get_app_logger()
@@ -37,7 +23,7 @@ async def lifespan(app: FastAPI):
     configure_uvicorn_logging()
     logger.info("FastAPI application started")
     async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as saver:
-        app.state.graph = _graph.compile(checkpointer=saver)
+        app.state.graph = graph.compile(checkpointer=saver)
         yield
     logger.info("FastAPI application shutdown")
 
@@ -65,19 +51,36 @@ app.add_middleware(
 
 
 class PresignedUrlRequest(BaseModel):
-    """Request model for presigned URL generation."""
+    """Request model for creating a presigned S3 upload URL.
+
+    Attributes:
+        file_name: Name (and key) to use for the uploaded PDF file.
+
+    Example:
+        {"file_name": "invoices/2025-11-23/invoice123.pdf"}
+    """
 
     file_name: str
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat endpoint."""
+    """Request model for the chat endpoint.
+
+    Attributes:
+        user_input: Plain text message from the user. Keep it short; the
+            backend will stream the assistant's reply as chunks.
+    """
 
     user_input: str
 
 
 class DeleteFileRequest(BaseModel):
-    """Request model for deleting a file from S3."""
+    """Request model for deleting a processed file from S3.
+
+    Attributes:
+        file_name: Key of the file to delete. For safety, this is validated
+            to be non-empty by the endpoint.
+    """
 
     file_name: str
 
@@ -86,7 +89,10 @@ class DeleteFileRequest(BaseModel):
 
 
 def _get_cache_manager() -> CacheManager:
-    """Get a CacheManager instance."""
+    """Return a new `CacheManager` instance.
+
+    The function is kept small to make testing and future injection easier.
+    """
     return CacheManager()
 
 
@@ -95,17 +101,13 @@ def _get_cache_manager() -> CacheManager:
 
 @app.post("/generate-presigned-url/")
 async def generate_presigned_url(request: PresignedUrlRequest) -> dict[str, str]:
-    """
-    Generate a presigned URL for uploading a file to S3.
+    """Create a presigned URL clients can use to PUT a PDF to S3.
 
-    Args:
-        request: Contains the file name to upload.
+    The URL is short-lived (1 hour) and the function also marks the file
+    as `pending` in the cache/database so the UI can show a progress state.
 
-    Returns:
-        Dictionary with presigned_url key.
-
-    Raises:
-        HTTPException: If S3 presigned URL generation fails.
+    Returns a JSON object: {"presigned_url": "https://..."}
+    On error the endpoint returns a clear HTTP 500 with a helpful message.
     """
     try:
         s3_client = get_s3_client()
@@ -137,16 +139,12 @@ async def generate_presigned_url(request: PresignedUrlRequest) -> dict[str, str]
 
 @app.get("/list-pdfs")
 async def list_pdfs() -> dict[str, list[dict]]:
-    """
-    List all PDF files and their indexing status.
+    """Return cached list of processed/uploaded PDF files and statuses.
 
-    Returns from Redis cache with automatic fallback to database refresh.
-
-    Returns:
-        Dictionary with pdf_files key containing list of file metadata.
-
-    Raises:
-        HTTPException: If cache/database query fails.
+    Response format: {"pdf_files": [ {"file_name": "...", "indexing_status": "..."}, ... ]}
+    The endpoint prefers a fast Redis-backed cache; if the cache is stale the
+    backend refreshes it in the background. Errors are communicated as HTTP
+    status codes with short human-readable messages.
     """
     try:
         cache_manager = _get_cache_manager()
@@ -163,19 +161,11 @@ async def list_pdfs() -> dict[str, list[dict]]:
 
 @app.get("/get_file_link")
 async def get_file_link(file_name: str) -> dict[str, str]:
-    """
-    Generate a temporary presigned URL for downloading a file from S3.
+    """Return a short-lived download link (presigned GET) for a file.
 
-    Allows clients to download processed PDF files with automatic expiration.
-
-    Args:
-        file_name: Name of the file to download (query parameter).
-
-    Returns:
-        Dictionary with download_url and file_name keys.
-
-    Raises:
-        HTTPException: If file_name is empty or S3 URL generation fails.
+    Query parameter: `file_name` (required). Returns {"download_url": ..., "file_name": ...}.
+    If the parameter is missing or the S3 request fails, the endpoint
+    returns a 400 or 500 with a concise message suitable for showing to users.
     """
     if not file_name or not file_name.strip():
         logger.warning("Get file link requested with empty file_name")
@@ -209,18 +199,13 @@ async def get_file_link(file_name: str) -> dict[str, str]:
 
 @app.delete("/delete_file/")
 async def delete_file(request: DeleteFileRequest) -> dict[str, str]:
-    """
-    Delete a file from S3 given its file name.
+    """Delete a file from S3 and mark it as deleted in cache/database.
 
-    Accepts:
-        JSON body with `file_name` key.
+    Body: {"file_name": "..."}
+    Success response: {"deleted": "<file_name>"}
 
-    Returns:
-        dict with deleted file_name on success.
-
-    Side effects:
-        - Calls S3 DeleteObject
-        - Updates cache/database status to "deleted"
+    The endpoint attempts to update the cache/database after deleting from S3;
+    cache/db failures are logged but do not cause the delete operation to fail.
     """
     if not request.file_name or not request.file_name.strip():
         logger.warning("Delete file requested with empty file_name")
@@ -259,21 +244,21 @@ async def delete_file(request: DeleteFileRequest) -> dict[str, str]:
 
 @app.post("/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
-    """
-    Stream chat responses using agentic workflow.
+    """Stream an assistant response for the user's input via server-sent events.
 
-    Integrates Neo4j graph schema, LLM with tools, and streaming message output.
-
-    Args:
-        request: User query text.
-
-    Returns:
-        StreamingResponse with text/event-stream content type.
+    The endpoint returns a StreamingResponse with `media_type="text/event-stream"`.
+    Each yielded string is a short piece of the assistant's reply; the client
+    should concatenate them as they arrive. On error the stream yields a single
+    "Error: ..." message so the frontend can show a friendly alert.
     """
     logger.info(f"Chat request received: {request.user_input[:100]}")
 
     async def _message_generator() -> AsyncGenerator[str, None]:
-        """Stream messages from the agentic workflow."""
+        """Yield textual chunks from the agent graph for SSE consumption.
+
+        Each yielded string is safe to append to the user's chat window. Tool
+        responses are filtered out so the client receives only user-facing text.
+        """
         try:
             # Use the precompiled graph stored on the app state. The
             # saver used to compile this graph is kept open in the
@@ -304,20 +289,35 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
 
 @app.get("/chat_history")
-async def chat_history():
+async def chat_history() -> list[dict[str, str]]:
+    """Return the conversation history for the current session thread.
+
+    Returns a list of message dicts with the keys:
+      - content: the message text
+      - type: message role/type (e.g. 'human' or 'ai')
+      - id: unique id for the message
+
+    Notes:
+      - The function reads the compiled graph state from `app.state.graph`.
+      - If no history exists an empty list is returned so the UI can handle it
+        without errors.
+      - Errors are logged and an empty list is returned to avoid crashing the
+        client; the frontend may show a brief notification when the list is
+        empty.
+    """
     config = {"configurable": {"thread_id": "thread-1"}}
 
-    # Initialize an empty list to store chat messages
-    chat_history_messages = []
+    # Prepare empty result to return quickly in error cases
+    chat_history_messages: list[dict[str, str]] = []
 
-    # Access Compiled Graph from Application State
+    # Access compiled graph from application state
     app_graph = app.state.graph
 
     try:
         # Get the current state of the chat session
         current_state = await app_graph.aget_state(config)
 
-        # Check if current state is valid
+        # If messages exist, convert them into a simple serializable list
         if current_state and current_state.values.get("messages"):
             for message in current_state.values.get("messages"):
                 chat_history_messages.append(
@@ -327,11 +327,26 @@ async def chat_history():
                         "id": message.id,
                     }
                 )
-
         else:
-            logger.info(f"No existing state found for session thread-1")
+            logger.info("No existing state found for session thread-1")
     except Exception as e:
-        logger.error(f"Error retrieving state for session thread-1 from SQLite: {e}")
+        # Log the error but return an empty list so the frontend can stay robust
+        logger.error(
+            f"Error retrieving state for session thread-1 from SQLite: {e}",
+            exc_info=True,
+        )
 
-    # Return conversation history
     return chat_history_messages
+
+
+@app.delete("/clear_history")
+async def clear_history():
+    try:
+        os.remove("checkpoints.sqlite")
+        return {"status": "success", "message": "Chat history cleared."}
+    except Exception as e:
+        logger.error(f"Error while clearing chat history:{e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to clear chat history at the moment. Please try again later.",
+        )

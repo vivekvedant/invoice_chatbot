@@ -1,10 +1,3 @@
-"""
-Configuration module for invoice chatbot backend.
-
-Centralizes environment loading, typed settings, and client factory functions.
-Follows 12-factor app principles with Pydantic BaseSettings for type-safe config.
-"""
-
 import os
 from functools import lru_cache
 from typing import Optional
@@ -21,7 +14,12 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    """Type-safe application settings loaded from environment variables."""
+    """Typed application settings loaded from environment variables.
+
+    Notes:
+        - Values fall back to sensible defaults where applicable.
+        - Use `get_settings()` for a cached Settings instance.
+    """
 
     model_config = ConfigDict(
         env_file=".env",
