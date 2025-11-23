@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { usePdfFiles } from "@/hooks/use-pdf-files";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+type HistoryMessage = { type: "human" | "ai"; content: string; id: string };
 
 export function ChatPage({
   onPdfCountChange,
@@ -23,30 +24,33 @@ export function ChatPage({
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  const STORAGE_KEY = "invoice_chat_messages_v1";
-
-  // Load persisted chat on mount
+  // Load chat history from API on mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as ChatMessage[];
-        if (Array.isArray(parsed)) setChatMessages(parsed);
+    async function loadChatHistory() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/chat_history`);
+        if (!res.ok) throw new Error("Failed to load chat history");
+
+        const history: HistoryMessage[] = await res.json();
+
+        // Convert API format to chat messages
+        const messages: ChatMessage[] = history.map((msg) => ({
+          role: msg.type === "human" ? "user" : "assistant",
+          content: msg.content,
+        }));
+
+        setChatMessages(messages);
+      } catch (err) {
+        console.warn("Failed to load chat history", err);
+      } finally {
+        setHistoryLoading(false);
       }
-    } catch (err) {
-      console.warn("Failed to load chat from localStorage", err);
     }
-  }, []);
 
-  // Persist chat whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(chatMessages));
-    } catch (err) {
-      console.warn("Failed to save chat to localStorage", err);
-    }
-  }, [chatMessages]);
+    loadChatHistory();
+  }, []);
 
   async function sendMessage() {
     if (!userInput.trim() || chatLoading) return;
@@ -103,12 +107,15 @@ export function ChatPage({
     }
   }
 
-  function clearChat() {
-    setChatMessages([]);
+  async function clearChat() {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      const res = await fetch(`${API_BASE_URL}/clear_history`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to clear chat history");
+      setChatMessages([]);
     } catch (err) {
-      /* ignore */
+      console.error("Failed to clear chat history", err);
     }
   }
 
@@ -119,7 +126,11 @@ export function ChatPage({
     >
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-blue-50/30 to-white pt-8 relative">
-        {chatMessages.length === 0 ? (
+        {historyLoading ? (
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : chatMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center">

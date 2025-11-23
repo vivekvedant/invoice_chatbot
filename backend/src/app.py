@@ -14,7 +14,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
+
+# from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from .agent import _graph
@@ -23,6 +24,22 @@ from .cache_manager import CacheManager
 from .config import get_s3_client, get_settings
 from .logging_config import configure_uvicorn_logging, get_app_logger
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from contextlib import asynccontextmanager
+from langchain_core.messages import AIMessage
+from langchain_core.messages.human import HumanMessage
+
+# Initialize centralized logging
+logger = get_app_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configure_uvicorn_logging()
+    logger.info("FastAPI application started")
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as saver:
+        app.state.graph = _graph.compile(checkpointer=saver)
+        yield
+    logger.info("FastAPI application shutdown")
 
 
 # Initialize FastAPI app
@@ -30,6 +47,7 @@ app = FastAPI(
     title="Invoice Chatbot Backend",
     description="AI-powered invoice knowledge graph and chat interface",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -41,22 +59,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize centralized logging
-logger = get_app_logger()
-
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    """Initialize logging and log startup."""
-    configure_uvicorn_logging()
-    logger.info("FastAPI application started")
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Log application shutdown."""
-    logger.info("FastAPI application shutdown")
 
 
 # ===== Request/Response Models =====
@@ -270,40 +272,66 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     """
     logger.info(f"Chat request received: {request.user_input[:100]}")
 
-    system_prompt = f"""
-    neo4j graph schema: {get_graph_schema()}
-    provide answer in sentence format.
-
-    Final answer output:
-    """
-
     async def _message_generator() -> AsyncGenerator[str, None]:
         """Stream messages from the agentic workflow."""
         try:
-            async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as saver:
-                app_graph = _graph.compile(checkpointer=saver)
-                config = {"configurable": {"thread_id": "thread-1"}}
+            # Use the precompiled graph stored on the app state. The
+            # saver used to compile this graph is kept open in the
+            # application lifespan, so the checkpointer remains valid.
+            app_graph = app.state.graph
+            config = {"configurable": {"thread_id": "thread-1"}}
 
-                async for message_chunk in app_graph.astream(
-                    {
-                        "messages": [
-                            AIMessage(content=system_prompt),
-                            HumanMessage(content=request.user_input),
-                        ]
-                    },
-                    stream_mode="messages",
-                    config=config,
+            async for message_chunk in app_graph.astream(
+                {"user_prompt": request.user_input},
+                stream_mode="messages",
+                config=config,
+            ):
+
+                # Only yield content that isn't a tool call response
+                if (
+                    message_chunk[0].content
+                    and "<toolcallresponse>" not in message_chunk[0].content
+                    and type(message_chunk[0]) is not HumanMessage
                 ):
-                    # Only yield content that isn't a tool call response
-                    if (
-                        message_chunk[0].content
-                        and "<toolcallresponse>" not in message_chunk[0].content
-                    ):
-                        yield f"{message_chunk[0].content} "
+                    yield f"{message_chunk[0].content} "
 
-                logger.info("Chat streaming completed successfully")
+            logger.info("Chat streaming completed successfully")
         except Exception as e:
             logger.error(f"Error during chat streaming: {str(e)}", exc_info=True)
             yield f"Error: {str(e)}"
 
     return StreamingResponse(_message_generator(), media_type="text/event-stream")
+
+
+@app.get("/chat_history")
+async def chat_history():
+    config = {"configurable": {"thread_id": "thread-1"}}
+
+    # Initialize an empty list to store chat messages
+    chat_history_messages = []
+
+    # Access Compiled Graph from Application State
+    app_graph = app.state.graph
+
+    try:
+        # Get the current state of the chat session
+        current_state = await app_graph.aget_state(config)
+
+        # Check if current state is valid
+        if current_state and current_state.values.get("messages"):
+            for message in current_state.values.get("messages"):
+                chat_history_messages.append(
+                    {
+                        "content": message.content,
+                        "type": message.type,
+                        "id": message.id,
+                    }
+                )
+
+        else:
+            logger.info(f"No existing state found for session thread-1")
+    except Exception as e:
+        logger.error(f"Error retrieving state for session thread-1 from SQLite: {e}")
+
+    # Return conversation history
+    return chat_history_messages
