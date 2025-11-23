@@ -88,7 +88,6 @@ def _tools_router(state: ChatbotState) -> str:
     return END
 
 
-# Build the LangGraph
 _tool_node = ToolNode(tools=_tools)
 _graph = StateGraph(ChatbotState)
 
@@ -97,6 +96,3 @@ _graph.add_node("tool_node", _tool_node)
 _graph.set_entry_point("chatbot")
 _graph.add_conditional_edges("chatbot", _tools_router)
 _graph.add_edge("tool_node", "chatbot")
-
-# Compile the runnable app
-app = _graph.compile()

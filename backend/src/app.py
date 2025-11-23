@@ -17,11 +17,13 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 
-from .agent import app as agent_app
+from .agent import _graph
 from .agent import get_graph_schema
 from .cache_manager import CacheManager
 from .config import get_s3_client, get_settings
 from .logging_config import configure_uvicorn_logging, get_app_logger
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -49,8 +51,6 @@ async def startup_event() -> None:
     """Initialize logging and log startup."""
     configure_uvicorn_logging()
     logger.info("FastAPI application started")
-    logger.info(f"Neo4j URI: {settings.neo4j_uri}")
-    logger.info(f"S3 Bucket: {settings.aws_s3_bucket_name}")
 
 
 @app.on_event("shutdown")
@@ -280,22 +280,28 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     async def _message_generator() -> AsyncGenerator[str, None]:
         """Stream messages from the agentic workflow."""
         try:
-            async for message_chunk in agent_app.astream(
-                {
-                    "messages": [
-                        AIMessage(content=system_prompt),
-                        HumanMessage(content=request.user_input),
-                    ]
-                },
-                stream_mode="messages",
-            ):
-                # Only yield content that isn't a tool call response
-                if (
-                    message_chunk[0].content
-                    and "<toolcallresponse>" not in message_chunk[0].content
+            async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as saver:
+                app_graph = _graph.compile(checkpointer=saver)
+                config = {"configurable": {"thread_id": "thread-1"}}
+
+                async for message_chunk in app_graph.astream(
+                    {
+                        "messages": [
+                            AIMessage(content=system_prompt),
+                            HumanMessage(content=request.user_input),
+                        ]
+                    },
+                    stream_mode="messages",
+                    config=config,
                 ):
-                    yield f"{message_chunk[0].content} "
-            logger.info("Chat streaming completed successfully")
+                    # Only yield content that isn't a tool call response
+                    if (
+                        message_chunk[0].content
+                        and "<toolcallresponse>" not in message_chunk[0].content
+                    ):
+                        yield f"{message_chunk[0].content} "
+
+                logger.info("Chat streaming completed successfully")
         except Exception as e:
             logger.error(f"Error during chat streaming: {str(e)}", exc_info=True)
             yield f"Error: {str(e)}"
