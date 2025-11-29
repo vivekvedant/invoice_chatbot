@@ -10,6 +10,8 @@ from neo4j import GraphDatabase
 from src import Invoice
 from src.cache_manager import CacheManager
 from src.logging_config import get_indexer_logger
+from cocoindex.setting import ServerSettings
+from cocoindex import start_server
 
 load_dotenv(dotenv_path=".env")
 
@@ -237,8 +239,15 @@ def main():
     """Start the indexing service."""
     logger.info("Indexing service initialized")
 
+    cocoindex.init()
+
+    server_settings = ServerSettings(
+        address="127.0.0.1:49344",
+        cors_origins=["https://cocoindex.io"],
+    )
+
+    start_server(server_settings)
     try:
-        cocoindex.init()
 
         # Setup the flow
         docs_to_kg_flow.setup(report_to_stdout=True)
