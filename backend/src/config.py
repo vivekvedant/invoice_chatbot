@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # Redis Configuration
     redis_host: str = os.getenv("REDIS_HOST", "localhost")
-    redis_port: int = int(os.getenv("REDIS_PORT", 6379))
+    redis_port: int = int(os.getenv("REDIS_PORT", 6378))
     redis_db: int = 0
 
     # Database Configuration
@@ -107,4 +107,6 @@ def get_llm() -> ChatGoogleGenerativeAI:
     Reuses ChatGoogleGenerativeAI to avoid repeated initialization.
     """
     settings = get_settings()
-    return ChatGoogleGenerativeAI(model=settings.llm_model)
+    return ChatGoogleGenerativeAI(
+        model=settings.llm_model, google_api_key=os.getenv("GEMINI_API_KEY")
+    )
