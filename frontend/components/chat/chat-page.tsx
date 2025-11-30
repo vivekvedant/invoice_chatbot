@@ -110,7 +110,7 @@ export function ChatPage({
   async function clearChat() {
     try {
       const res = await fetch(`${API_BASE_URL}/clear_history`, {
-        method: "POST",
+        method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to clear chat history");
       setChatMessages([]);
