@@ -258,7 +258,15 @@ export function InvoicesTable({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-600">
-                      {pdf.last_updated}
+                      {new Date(
+                        parseInt(pdf.last_updated) * 1000
+                      ).toLocaleString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </td>
                     <td className="px-6 py-4">
                       <button
