@@ -1,11 +1,8 @@
-
 from typing import Annotated, Any, TypedDict
-
 from langchain.tools import tool
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.prebuilt import ToolNode
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from .config import get_llm, get_neo4j_graph
+from config import get_llm, get_neo4j_graph
 
 
 @tool
@@ -23,6 +20,8 @@ def run_cypher_query(query: str) -> str:
         Exception: If query execution fails.
     """
     graph = get_neo4j_graph()
+
+    print(query)
     result = graph.query(query=query)
     return f"<toolcallresponse>{result}</toolcallresponse>"
 
@@ -49,16 +48,7 @@ class ChatbotState(TypedDict):
         messages: List of chat messages, accumulated via add_messages reducer.
     """
 
-    user_prompt: str
-    messages: Annotated[list[BaseMessage], add_messages]
-    response: str
-
-
-def process_user_node(state: ChatbotState):
-    messages = []
-
-    messages.append(HumanMessage(content=state["user_prompt"]))
-    return {"messages": messages}
+    messages: Annotated[list[Any], add_messages]
 
 
 def _chatbot_node(state: ChatbotState) -> dict[str, list[Any]]:
@@ -69,41 +59,36 @@ def _chatbot_node(state: ChatbotState) -> dict[str, list[Any]]:
     """
     llm = get_llm()
     llm_with_tools = llm.bind_tools(tools=_tools)
+    prompt = f"""
+    <Role>
+    You are a helpful assistant that answers user questions about invoices.
+    </Role>
 
-    # if SystemMessage not in state["messages"]:
-    system_prompt = f"""
-    Role:
-    You are a friendly, helpful assistant specialized in invoices. Prefer
-    short, clear, and polite replies that a non-technical user can understand.
+    <Task>
+    1. Use the run_cypher_query to retrieve all relevant context.
+    2. Provide a direct, user-friendly answer.
+    </Task>
 
-    Behavior:
-    - Use plain language (short sentences). Be helpful and concise.
-    - If required information is missing, ask one direct clarifying question.
-    - Give a brief (1-2 sentence) explanation only when it helps the user.
-    - Never expose internal Cypher queries or tool internals; only return
-        user-facing results.
+    <Neo4j_schema>
+        <example>
+        {get_graph_schema()}
+        </example>
+    </Neo4j_schema>
 
-    When using the knowledge graph, prefer returning a summarized answer and
-    highlight any assumptions you made. If no matching data is found, clearly
-    tell the user and offer a next step (for example: "I couldn't find a match;
-    do you want me to search by invoice number or date?").
+    <User_input>
+    {state['messages']}
+    </User_input>
 
-    <Neo4j_schema> {get_graph_schema()} </Neo4j_schema>
+    <Rules>
+    1. Do not provide explanations of your reasoning or process.
+    2. Output the final answer in plain text (no markdown).
+    3. Always use run_cypher_query tool before answering user question
+    </Rules>
 
-    Output_Format: Plain text suitable for end users
     """
-    response = llm_with_tools.invoke(
-        [SystemMessage(content=system_prompt)] + state["messages"]
-    )
-
     return {
-        "response": response.content,
+        "messages": [llm_with_tools.invoke(prompt)],
     }
-
-
-def process_ai_response_node(state: ChatbotState):
-    user_prompt = state["response"]
-    return {"messages": [AIMessage(content=user_prompt)]}
 
 
 def _tools_router(state: ChatbotState) -> str:
@@ -123,17 +108,13 @@ def _tools_router(state: ChatbotState) -> str:
     return END
 
 
-_tool_node = ToolNode(tools=_tools)
+# Build the LangGraph
+tool_node = ToolNode(tools=_tools)
 graph = StateGraph(ChatbotState)
 
-graph.add_node("process_user_node", process_user_node)
-graph.add_node("process_ai_response_node", process_ai_response_node)
-
 graph.add_node("chatbot", _chatbot_node)
-graph.add_node("tool_node", _tool_node)
-
-graph.set_entry_point("process_user_node")
-graph.add_edge("process_user_node", "chatbot")
-graph.add_edge("chatbot", "process_ai_response_node")
-graph.add_conditional_edges("process_ai_response_node", _tools_router)
+graph.add_node("tool_node", tool_node)
+graph.set_entry_point("chatbot")
+graph.add_conditional_edges("chatbot", _tools_router)
 graph.add_edge("tool_node", "chatbot")
+
