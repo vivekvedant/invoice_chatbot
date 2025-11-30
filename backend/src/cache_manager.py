@@ -1,10 +1,3 @@
-"""
-Cache manager for file indexing status.
-
-Provides dual-tier caching using Redis for performance and PostgreSQL for persistence.
-Automatically syncs between layers on cache misses.
-"""
-
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -13,8 +6,8 @@ from typing import Generator
 import redis
 from sqlalchemy.orm import Session
 
-from .config import get_settings
-from .db_models import Files, get_session
+from config import get_settings
+from db_models import Files, get_session
 
 
 @contextmanager
@@ -119,7 +112,7 @@ class CacheManager:
 
     def update_cache_and_database(self, file_name: str, indexing_status: str) -> None:
         """
-        Update a file’s indexing status in both Redis and DB.
+        Update a file's indexing status in both Redis and DB.
         Auto-creates file record if missing.
         """
 
@@ -164,3 +157,27 @@ class CacheManager:
 
         # Save updated cache
         self._save_cache(cache_key, cached_files)
+
+    def delete_from_cache_and_database(self, file_name: str) -> None:
+        """
+        Delete a file's record from both Redis cache and SQL database.
+        Silent if record does not exist.
+        """
+
+        cache_key = self.DEFAULT_CACHE_KEY
+        cached_files = self.get_cache(cache_key)
+
+        # Build lookup map for O(1) lookup
+        index_map = {item["file_name"]: i for i, item in enumerate(cached_files)}
+
+        # Remove from cache if present
+        if file_name in index_map:
+            idx = index_map[file_name]
+            cached_files.pop(idx)
+            self._save_cache(cache_key, cached_files)
+
+        # Remove from database
+        with _db_session() as session:
+            record = session.query(Files).filter_by(file_name=file_name).first()
+            if record:
+                session.delete(record)
