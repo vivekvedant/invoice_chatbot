@@ -1,12 +1,3 @@
-"""
-Centralized logging configuration for invoice chatbot backend.
-
-Provides rotating file-based logging with structured formatters for both
-the FastAPI application and background indexing service.
-
-All logs are written to `./logs` directory with rotation to prevent unbounded growth.
-"""
-
 import logging
 import os
 from functools import lru_cache
