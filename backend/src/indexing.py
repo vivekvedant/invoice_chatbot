@@ -240,10 +240,9 @@ def main():
     cocoindex.init()
 
     server_settings = ServerSettings(
-        address="127.0.0.1:49344",
+        address="0.0.0.0:49344",
         cors_origins=["https://cocoindex.io"],
     )
-
     start_server(server_settings)
     try:
 
