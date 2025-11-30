@@ -6,16 +6,14 @@ import cocoindex
 from docling.document_converter import DocumentConverter
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-
-from src import Invoice
-from src.cache_manager import CacheManager
-from src.logging_config import get_indexer_logger
+from models import Invoice
+from cache_manager import CacheManager
+from logging_config import get_indexer_logger
 from cocoindex.setting import ServerSettings
 from cocoindex import start_server
 
 load_dotenv(dotenv_path=".env")
 
-os.environ["GEMINI_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 dynamodb = boto3.resource("dynamodb")
 
 logger = get_indexer_logger()
@@ -169,7 +167,7 @@ class Neo4JTargetConnector:
 
 
 @cocoindex.flow_def(name="invoice_kg")
-def docs_to_kg_flow(
+def invoice_to_kg(
     flow_builder: cocoindex.FlowBuilder, data_scope: cocoindex.DataScope
 ) -> None:
     """Define invoice knowledge graph processing flow."""
@@ -250,10 +248,10 @@ def main():
     try:
 
         # Setup the flow
-        docs_to_kg_flow.setup(report_to_stdout=True)
+        invoice_to_kg.setup(report_to_stdout=True)
 
         with cocoindex.FlowLiveUpdater(
-            docs_to_kg_flow, cocoindex.FlowLiveUpdaterOptions(print_stats=True)
+            invoice_to_kg, cocoindex.FlowLiveUpdaterOptions(print_stats=True)
         ) as updater:
             logger.info("Live updater started. Listening for documents...")
             try:
