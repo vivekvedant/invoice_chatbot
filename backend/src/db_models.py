@@ -1,18 +1,10 @@
-"""
-Database models and session factory for file indexing.
-
-Uses SQLAlchemy ORM with PostgreSQL backend for persistence.
-Provides session factory and declarative base for model definitions.
-"""
-
 from datetime import datetime, timezone
 from functools import lru_cache
 
-from sqlalchemy import Column, DateTime, Integer, Text, create_engine, text
+from sqlalchemy import Column, Integer, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from .config import get_settings
-from sqlalchemy import DateTime
+from config import get_settings
 
 
 class Base(DeclarativeBase):
