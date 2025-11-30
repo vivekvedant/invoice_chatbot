@@ -1,0 +1,50 @@
+# --- Python caches ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Data, logs, checkpoints ---
+data/
+logs/
+checkpoints.sqlite
+run/
+
+# --- Test artifacts ---
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# --- Editor/IDE ---
+.vscode/
+.idea/
+
+# --- Git ---
+.git
+.gitignore
+
+# --- Docker and build ---
+docker-compose.yaml
+*.db
+*.sqlite
+.cache/
+dist/
+build/
+
+# --- Misc large files ---
+REFACTOR*.md
+REFACTOR_COMPLETE.txt
+
+# --- Ignore everything in root unless explicitly needed ---
+# (Optional stricter mode)
+# *
+# !src/
+# !pyproject.toml
+# !uv.lock
+# !Dockerfile

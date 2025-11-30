@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: always
+    volumes:
+      - ./backend/data/postgres_data:/var/lib/postgresql
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - 5432:5432
+
+  neo4j:
+    image: neo4j:2025.10
+    restart: always
+    volumes:
+      - ./backend/data/neo4j/logs:/logs
+      - ./backend/data/neo4j/config:/config
+      - ./backend/data/neo4j/data:/data
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=["apoc","graph-data-science"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*,gds.*
+      - NEO4J_apoc_config_compatibility_enable_apoc_meta_data=true
+      - NEO4J_db_logs_query_enabled=VERBOSE
+      - NEO4J_db_logs_query_transaction_enabled=VERBOSE
+      - NEO4J_db_logs_query_parameter__logging__enabled=true
+      - NEO4J_dbms_logs_http_enabled=true
+      - NEO4J_server_logs_debug_enabled=true
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+  redis:
+    image: redislabs/redismod
+    ports:
+      - "6378:6379"
+    volumes:
+      - ./backend/data/redis_data:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - neo4j
+      - redis
+    ports:
+      - "8000:8000"
+      - "49344:49344"
+    environment:
+     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+     - POSTGRES_USER=${POSTGRES_USER}
+     - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+     - POSTGRES_DB=${POSTGRES_DB}
+     - COCOINDEX_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+     - AMAZON_S3_BUCKET_NAME=${AMAZON_S3_BUCKET_NAME}
+     - AMAZON_S3_SQS_QUEUE_URL=${AMAZON_S3_SQS_QUEUE_URL}
+     - NEO4J_USER=${NEO4J_USER}
+     - NEO4J_URI=neo4j://neo4j:7687
+     - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - GEMINI_API_KEY=${GEMINI_API_KEY}
+     - REDIS_PORT=6379
+     - REDIS_HOST=redis
+    volumes:
+      - ./backend/data:/app/data
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000

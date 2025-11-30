@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+dist
+npm-debug.log
+yarn-error.log
+/.pnp
+.pnp.js
+coverage
+/.git
+/.github
+*.local
+*.log
+frontend/node_modules
