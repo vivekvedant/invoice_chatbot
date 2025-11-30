@@ -1,4 +1,41 @@
 from dataclasses import dataclass, field
+from pydantic import BaseModel
+
+
+class PresignedUrlRequest(BaseModel):
+    """Request model for creating a presigned S3 upload URL.
+
+    Attributes:
+        file_name: Name (and key) to use for the uploaded PDF file.
+
+    Example:
+        {"file_name": "invoices/2025-11-23/invoice123.pdf"}
+    """
+
+    file_name: str
+
+
+class ChatRequest(BaseModel):
+    """Request model for the chat endpoint.
+
+    Attributes:
+        user_input: Plain text message from the user. Keep it short; the
+            backend will stream the assistant's reply as chunks.
+    """
+
+    user_input: str
+
+
+class DeleteFileRequest(BaseModel):
+    """Request model for deleting a processed file from S3.
+
+    Attributes:
+        file_name: Key of the file to delete. For safety, this is validated
+            to be non-empty by the endpoint.
+    """
+
+    file_name: str
+
 
 @dataclass
 class Item:
