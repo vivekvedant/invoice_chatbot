@@ -1,5 +1,5 @@
 [project]
-name = "Invoice Chatbot Backend"
+name = "invoice_chatbot_backend"
 version = "0.1.0"
 description = "AI-powered invoice knowledge graph and chat interface"
 readme = "README.md"
