@@ -142,26 +142,4 @@ docker-compose up --build
 ```bash
 docker-compose down
 ```
-
----
-
-## Local Development (Optional)
-
-**Backend:**
-
-```bash
-cd backend
-./start.sh   # sets environment and starts the app
-```
-
-**Frontend:**
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend runs at [http://localhost:3000](http://localhost:3000) by default.
-
 ---
