@@ -40,6 +40,7 @@ Invoice Chatbot is a **production-oriented prototype** for live invoice indexing
 * **Graph persistence:** Idempotent `MERGE`-style writes in Neo4j prevent duplication and allow safe updates.
 * **Developer tooling:** Local Docker Compose setup and scripts for fast iteration.
 
+## Demo Link: https://youtu.be/8ub0E3SIjbY
 ---
 
 ## Architecture
